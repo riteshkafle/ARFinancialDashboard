@@ -1,0 +1,451 @@
+{
+  "name": "AR Copilot – AI Accounts Receivable Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "a1111111-0000-4000-8000-000000000001",
+      "name": "Daily AR Scan",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-1180, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "PUT_YOUR_GOOGLE_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Invoices",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "a1111111-0000-4000-8000-000000000002",
+      "name": "Read Invoice Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-940, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PLACEHOLDER",
+          "name": "Google Sheets - AR Copilot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "b1111111-0000-4000-8000-000000000001",
+              "leftValue": "={{ $json.Status }}",
+              "rightValue": "Paid",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1111111-0000-4000-8000-000000000003",
+      "name": "Filter Unpaid Invoices",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [-700, 180]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculates days overdue and assigns a risk tier for every unpaid invoice.\nconst today = new Date();\ntoday.setHours(0, 0, 0, 0);\n\nconst results = [];\n\nfor (const item of $input.all()) {\n  const data = item.json;\n  const dueDate = new Date(data['Due Date']);\n  const diffMs = today - dueDate;\n  const daysLate = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));\n\n  let riskLevel = 'None';\n  if (daysLate >= 30) riskLevel = 'Escalate';\n  else if (daysLate >= 16) riskLevel = 'High';\n  else if (daysLate >= 6) riskLevel = 'Medium';\n  else if (daysLate >= 1) riskLevel = 'Low';\n\n  let reminderStage = 'No';\n  if (riskLevel === 'Low') reminderStage = '1st Reminder';\n  else if (riskLevel === 'Medium') reminderStage = '2nd Reminder';\n  else if (riskLevel === 'High') reminderStage = '2nd Reminder';\n  else if (riskLevel === 'Escalate') reminderStage = 'Final Notice';\n\n  results.push({\n    json: {\n      ...data,\n      'Days Late': daysLate,\n      'Risk Score': riskLevel,\n      'Reminder Stage': reminderStage,\n      isOverdue: daysLate > 0,\n    },\n  });\n}\n\nreturn results;"
+      },
+      "id": "a1111111-0000-4000-8000-000000000004",
+      "name": "Calculate Days Overdue & Risk",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-460, 180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "b1111111-0000-4000-8000-000000000002",
+              "leftValue": "={{ $json.isOverdue }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1111111-0000-4000-8000-000000000005",
+      "name": "Filter Overdue Only",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [-220, 180]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Assembles a risk-aware prompt for the AI model so tone escalates with days overdue.\nconst toneByRisk = {\n  Low: 'a warm, low-pressure first reminder that assumes this may just be an oversight',\n  Medium: 'a polite but noticeably firmer second reminder that references the earlier notice and asks for a status update',\n  High: 'a firm, professional notice that clearly states the account is significantly overdue and requests immediate payment or contact',\n  Escalate: 'a final notice that is direct and professional, references prior reminders, and mentions that continued non-payment may result in account hold or referral to collections',\n};\n\nreturn $input.all().map((item) => {\n  const d = item.json;\n  const tone = toneByRisk[d['Risk Score']] || toneByRisk.Low;\n\n  const prompt = `You are an Accounts Receivable specialist writing on behalf of AR Copilot Inc.\n\nWrite ${tone}.\n\nInvoice details:\n- Customer: ${d['Customer']}\n- Invoice ID: ${d['Invoice ID']}\n- Amount Due: $${Number(d['Amount']).toFixed(2)}\n- Original Due Date: ${d['Due Date']}\n- Days Overdue: ${d['Days Late']}\n- Risk Level: ${d['Risk Score']}\n\nRules:\n- Keep it under 150 words.\n- Sign off as \"AR Copilot Finance Team\".\n- Never sound threatening, even in the Escalate tier — stay professional and solution-oriented.\n- Return STRICT JSON only, no markdown, in this exact shape: {\"subject\": \"...\", \"body\": \"...\"}`;\n\n  return { json: { ...d, aiPrompt: prompt } };\n});"
+      },
+      "id": "a1111111-0000-4000-8000-000000000006",
+      "name": "Build AI Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [20, 180]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "message",
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You write concise, professional accounts-receivable reminder emails and return strict JSON only."
+            },
+            {
+              "role": "user",
+              "content": "={{ $json.aiPrompt }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {
+          "temperature": 0.4
+        }
+      },
+      "id": "a1111111-0000-4000-8000-000000000007",
+      "name": "Generate Reminder Email (AI)",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.8,
+      "position": [260, 180],
+      "credentials": {
+        "openAiApi": {
+          "id": "PLACEHOLDER",
+          "name": "OpenAI - AR Copilot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Safely parses the AI response into subject/body fields with a graceful fallback.\nreturn $input.all().map((item) => {\n  const raw = item.json.message?.content ?? item.json.content ?? item.json.text ?? '{}';\n  let parsed;\n  try {\n    parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;\n  } catch (e) {\n    parsed = {\n      subject: `Payment Reminder - Invoice ${item.json['Invoice ID']}`,\n      body: typeof raw === 'string' ? raw : 'Please contact our finance team regarding your outstanding invoice.',\n    };\n  }\n  return { json: { ...item.json, emailSubject: parsed.subject, emailBody: parsed.body } };\n});"
+      },
+      "id": "a1111111-0000-4000-8000-000000000008",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 180]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.Email }}",
+        "subject": "={{ $json.emailSubject }}",
+        "message": "={{ $json.emailBody }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "a1111111-0000-4000-8000-000000000009",
+      "name": "Send Reminder Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [740, 180],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "PLACEHOLDER",
+          "name": "Gmail - AR Copilot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "PUT_YOUR_GOOGLE_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": ["Invoice ID"],
+          "value": {
+            "Invoice ID": "={{ $json['Invoice ID'] }}",
+            "Reminder Sent": "={{ $json['Reminder Stage'] }}",
+            "Days Late": "={{ $json['Days Late'] }}",
+            "Risk Score": "={{ $json['Risk Score'] }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "a1111111-0000-4000-8000-00000000000a",
+      "name": "Update Invoice Record",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [980, 180],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PLACEHOLDER",
+          "name": "Google Sheets - AR Copilot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "b1111111-0000-4000-8000-000000000003",
+              "leftValue": "={{ $json['Risk Score'] }}",
+              "rightValue": "High",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "b1111111-0000-4000-8000-000000000004",
+              "leftValue": "={{ $json['Risk Score'] }}",
+              "rightValue": "Escalate",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "a1111111-0000-4000-8000-00000000000b",
+      "name": "Is High Risk?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1220, 180]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#ar-alerts",
+          "mode": "name"
+        },
+        "text": "=:rotating_light: *High-Risk Invoice Alert*\n*Customer:* {{ $json.Customer }}\n*Invoice:* {{ $json['Invoice ID'] }}\n*Amount Due:* ${{ $json.Amount }}\n*Days Overdue:* {{ $json['Days Late'] }}\n*Risk Level:* {{ $json['Risk Score'] }}\n*Action:* {{ $json['Reminder Stage'] }} sent — please review for manual follow-up.",
+        "otherOptions": {}
+      },
+      "id": "a1111111-0000-4000-8000-00000000000c",
+      "name": "Notify Finance Team",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [1460, 180],
+      "credentials": {
+        "slackApi": {
+          "id": "PLACEHOLDER",
+          "name": "Slack - AR Copilot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "id": "a1111111-0000-4000-8000-00000000000d",
+      "name": "Aggregate All Invoices",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [-700, 460]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Rolls up the whole sheet into the finance dashboard KPIs.\nconst items = $input.all()[0].json.data ?? $input.all().map((i) => i.json);\n\nconst paid = items.filter((i) => i.Status === 'Paid');\nconst pending = items.filter((i) => i.Status === 'Pending');\nconst overdue = items.filter((i) => i.Status === 'Overdue');\nconst highRisk = overdue.filter((i) => ['High', 'Escalate'].includes(i['Risk Score']));\n\nconst sum = (arr) => arr.reduce((t, i) => t + Number(i.Amount || 0), 0);\n\nconst totalPaid = sum(paid);\nconst totalOutstanding = sum(pending) + sum(overdue);\nconst totalARBalance = totalPaid + totalOutstanding;\nconst avgDaysLate = overdue.length\n  ? overdue.reduce((t, i) => t + Number(i['Days Late'] || 0), 0) / overdue.length\n  : 0;\n\nreturn [{\n  json: {\n    'Report Date': new Date().toISOString().slice(0, 10),\n    'Total Outstanding': totalOutstanding.toFixed(2),\n    'Total Paid': totalPaid.toFixed(2),\n    'Overdue Invoices': overdue.length,\n    'High Risk Accounts': highRisk.length,\n    'Average Days Late': avgDaysLate.toFixed(1),\n    'Total AR Balance': totalARBalance.toFixed(2),\n  },\n}];"
+      },
+      "id": "a1111111-0000-4000-8000-00000000000e",
+      "name": "Calculate Dashboard Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-460, 460]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "PUT_YOUR_GOOGLE_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Dashboard",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": ["Report Date"]
+        },
+        "options": {}
+      },
+      "id": "a1111111-0000-4000-8000-00000000000f",
+      "name": "Update Dashboard Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-220, 460],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PLACEHOLDER",
+          "name": "Google Sheets - AR Copilot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily AR Scan": {
+      "main": [
+        [
+          { "node": "Read Invoice Sheet", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Read Invoice Sheet": {
+      "main": [
+        [
+          { "node": "Filter Unpaid Invoices", "type": "main", "index": 0 },
+          { "node": "Aggregate All Invoices", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Filter Unpaid Invoices": {
+      "main": [
+        [
+          { "node": "Calculate Days Overdue & Risk", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Calculate Days Overdue & Risk": {
+      "main": [
+        [
+          { "node": "Filter Overdue Only", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Filter Overdue Only": {
+      "main": [
+        [
+          { "node": "Build AI Prompt", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Build AI Prompt": {
+      "main": [
+        [
+          { "node": "Generate Reminder Email (AI)", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Generate Reminder Email (AI)": {
+      "main": [
+        [
+          { "node": "Parse AI Response", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          { "node": "Send Reminder Email", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Send Reminder Email": {
+      "main": [
+        [
+          { "node": "Update Invoice Record", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Update Invoice Record": {
+      "main": [
+        [
+          { "node": "Is High Risk?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Is High Risk?": {
+      "main": [
+        [
+          { "node": "Notify Finance Team", "type": "main", "index": 0 }
+        ],
+        []
+      ]
+    },
+    "Aggregate All Invoices": {
+      "main": [
+        [
+          { "node": "Calculate Dashboard Metrics", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Calculate Dashboard Metrics": {
+      "main": [
+        [
+          { "node": "Update Dashboard Sheet", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "ar-copilot-workflow",
+  "tags": ["accounts-receivable", "ai-automation", "portfolio"]
+}

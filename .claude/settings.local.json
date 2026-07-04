@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rtk ls *)",
+      "Bash(python3 -c \"import json; json.load\\(open\\('/Users/rkafle/Desktop/app_development/Accountn8nagent/n8n/AR-Copilot-Workflow.json'\\)\\); print\\('valid JSON'\\)\")",
+      "Bash(gh api *)",
+      "WebFetch(domain:github.com)",
+      "Bash(kill 83665)",
+      "Bash(awk '{print $2}')",
+      "Bash(xargs kill -9)",
+      "Bash(rtk curl *)",
+      "Bash(rtk git *)",
+      "Bash(rtk git commit -m 'Update dashboard: add live Google Sheets data fetch with CORS proxy fallback *)",
+      "Bash(git init *)",
+      "Bash(git config *)"
+    ]
+  }
+}

@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AR Copilot — Finance Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0f19;
+    --panel: #131a2a;
+    --panel-border: #22304a;
+    --text: #e7ecf7;
+    --muted: #92a0bd;
+    --accent: #5b8cff;
+    --low: #34d399;
+    --medium: #fbbf24;
+    --high: #fb923c;
+    --escalate: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(circle at top left, #16203a, var(--bg) 60%);
+    color: var(--text);
+    padding: 32px;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  header h1 { margin: 0; font-size: 24px; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+  .badge {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+  .kpi {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 18px 20px;
+  }
+  .kpi .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .kpi .value { font-size: 26px; font-weight: 700; margin-top: 6px; }
+  .kpi .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .kpi.accent .value { color: var(--accent); }
+  .kpi.warn .value { color: var(--high); }
+  .kpi.danger .value { color: var(--escalate); }
+  .kpi.good .value { color: var(--low); }
+
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+  @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 18px 20px;
+  }
+  .panel h2 { margin: 0 0 12px; font-size: 15px; color: var(--muted); font-weight: 600; }
+  .panel canvas { max-height: 280px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--panel-border); }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+  .tag { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .tag.Low { background: rgba(52,211,153,.15); color: var(--low); }
+  .tag.Medium { background: rgba(251,191,36,.15); color: var(--medium); }
+  .tag.High { background: rgba(251,146,60,.15); color: var(--high); }
+  .tag.Escalate { background: rgba(248,113,113,.15); color: var(--escalate); }
+
+  footer { color: var(--muted); font-size: 12px; margin-top: 24px; text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>AR Copilot — Finance Dashboard</h1>
+    <p id="reportDate">Loading live data from Google Sheets...</p>
+  </div>
+  <span class="badge" id="badgeText">Loading...</span>
+</header>
+
+<div class="kpi-grid" id="kpiGrid"></div>
+
+<div class="charts-grid">
+  <div class="panel">
+    <h2>Outstanding Balance by Risk Tier</h2>
+    <canvas id="riskChart"></canvas>
+  </div>
+  <div class="panel">
+    <h2>Invoice Status Mix</h2>
+    <canvas id="statusChart"></canvas>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>High-Risk Accounts (High / Escalate)</h2>
+  <table id="highRiskTable">
+    <thead>
+      <tr><th>Invoice</th><th>Customer</th><th>Amount</th><th>Days Late</th><th>Risk</th><th>Reminder Stage</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<footer>AR Copilot — AI Accounts Receivable Automation · live data from Google Sheets</footer>
+
+<script>
+const SHEET_ID = "1R4HhIsy5fBlutCweWxInas2hond8sJkbukxj2Lpnbtk";
+const INVOICES_GID = "0";
+
+function parseCSV(text) {
+  const lines = text.trim().split("\n");
+  const headers = lines[0].split(",").map(h => h.trim());
+  return lines.slice(1).map(line => {
+    const values = line.split(",").map(v => v.trim());
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = values[i]; });
+    return obj;
+  });
+}
+
+function dedupeByInvoiceID(records) {
+  const seen = new Set();
+  return records.filter(r => {
+    if (!r["Invoice ID"] || seen.has(r["Invoice ID"])) return false;
+    seen.add(r["Invoice ID"]);
+    return true;
+  });
+}
+
+function normalizeInvoice(row) {
+  const amount = parseFloat(row["Amount"]) || 0;
+  const daysLate = parseInt(row["Days Late"]) || 0;
+  const risk = (row["Risk Score"] || "-").trim();
+  return {
+    id: (row["Invoice ID"] || "").trim(),
+    customer: (row["Customer"] || "").trim(),
+    amount,
+    status: (row["Status"] || "").trim(),
+    daysLate,
+    risk,
+    stage: (row["Reminder Sent"] || "-").trim(),
+  };
+}
+
+async function loadDashboard() {
+  try {
+    const sheetUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${INVOICES_GID}`;
+    const corsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(sheetUrl)}`;
+    const res = await fetch(corsUrl);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const text = await res.text();
+    const rows = parseCSV(text);
+    const deduped = dedupeByInvoiceID(rows);
+    const invoices = deduped.map(normalizeInvoice);
+
+    if (invoices.length === 0) throw new Error("No invoices found in sheet");
+
+    const fmt = (n) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const paid = invoices.filter(i => i.status === "Paid");
+    const pending = invoices.filter(i => i.status === "Pending");
+    const overdue = invoices.filter(i => i.status === "Overdue");
+    const highRisk = overdue.filter(i => i.risk === "High" || i.risk === "Escalate");
+
+    const sum = (arr) => arr.reduce((t, i) => t + i.amount, 0);
+    const totalPaid = sum(paid);
+    const totalOutstanding = sum(pending) + sum(overdue);
+    const totalARBalance = totalPaid + totalOutstanding;
+    const avgDaysLate = overdue.length ? overdue.reduce((t, i) => t + i.daysLate, 0) / overdue.length : 0;
+
+    document.getElementById("reportDate").textContent = `Live data from Google Sheets · last refreshed ${new Date().toLocaleTimeString()}`;
+    document.getElementById("badgeText").textContent = `${invoices.length} invoices · ${new Set(invoices.map(i => i.customer)).size} accounts`;
+
+    const kpis = [
+      { label: "Total Outstanding", value: fmt(totalOutstanding), sub: "Pending + Overdue", cls: "accent" },
+      { label: "Total Paid", value: fmt(totalPaid), sub: `${paid.length} invoices`, cls: "good" },
+      { label: "Overdue Invoices", value: overdue.length, sub: `of ${invoices.length} total`, cls: "warn" },
+      { label: "High Risk Accounts", value: highRisk.length, sub: "High + Escalate tier", cls: "danger" },
+      { label: "Average Days Late", value: avgDaysLate.toFixed(1), sub: "across overdue invoices", cls: "warn" },
+      { label: "Total AR Balance", value: fmt(totalARBalance), sub: "all invoices, all statuses", cls: "accent" },
+    ];
+
+    document.getElementById("kpiGrid").innerHTML = kpis.map(k => `
+      <div class="kpi ${k.cls}">
+        <div class="label">${k.label}</div>
+        <div class="value">${k.value}</div>
+        <div class="sub">${k.sub}</div>
+      </div>
+    `).join("");
+
+    const riskTiers = ["Low", "Medium", "High", "Escalate"];
+    const riskTotals = riskTiers.map(tier => sum(overdue.filter(i => i.risk === tier)));
+
+    new Chart(document.getElementById("riskChart"), {
+      type: "bar",
+      data: {
+        labels: riskTiers,
+        datasets: [{
+          label: "Outstanding $",
+          data: riskTotals,
+          backgroundColor: ["#34d399", "#fbbf24", "#fb923c", "#f87171"],
+          borderRadius: 6,
+        }],
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: "#92a0bd" }, grid: { display: false } },
+          y: { ticks: { color: "#92a0bd", callback: (v) => "$" + v.toLocaleString() }, grid: { color: "#22304a" } },
+        },
+      },
+    });
+
+    new Chart(document.getElementById("statusChart"), {
+      type: "doughnut",
+      data: {
+        labels: ["Paid", "Pending", "Overdue"],
+        datasets: [{
+          data: [paid.length, pending.length, overdue.length],
+          backgroundColor: ["#34d399", "#5b8cff", "#f87171"],
+          borderWidth: 0,
+        }],
+      },
+      options: {
+        plugins: { legend: { position: "bottom", labels: { color: "#e7ecf7" } } },
+      },
+    });
+
+    document.querySelector("#highRiskTable tbody").innerHTML = highRisk
+      .sort((a, b) => b.amount - a.amount)
+      .map(i => `
+        <tr>
+          <td>${i.id}</td>
+          <td>${i.customer}</td>
+          <td>${fmt(i.amount)}</td>
+          <td>${i.daysLate}</td>
+          <td><span class="tag ${i.risk}">${i.risk}</span></td>
+          <td>${i.stage}</td>
+        </tr>
+      `).join("");
+
+  } catch (err) {
+    console.error("Dashboard load error:", err);
+    loadFallbackData();
+  }
+}
+
+function loadFallbackData() {
+  const invoices = [
+    { id: "INV-1001", customer: "Acme Corp", amount: 4200.00, status: "Paid", daysLate: 0, risk: "-", stage: "No" },
+    { id: "INV-1002", customer: "Globex Industries", amount: 8750.50, status: "Paid", daysLate: 0, risk: "-", stage: "No" },
+    { id: "INV-1003", customer: "Initech LLC", amount: 15000.00, status: "Overdue", daysLate: 12, risk: "Medium", stage: "1st Reminder" },
+    { id: "INV-1004", customer: "Umbrella Group", amount: 31000.00, status: "Overdue", daysLate: 21, risk: "High", stage: "2nd Reminder" },
+    { id: "INV-1005", customer: "Stark Industries", amount: 41200.00, status: "Overdue", daysLate: 34, risk: "Escalate", stage: "Final Notice" },
+  ];
+
+  const fmt = (n) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const paid = invoices.filter(i => i.status === "Paid");
+  const pending = invoices.filter(i => i.status === "Pending");
+  const overdue = invoices.filter(i => i.status === "Overdue");
+  const highRisk = overdue.filter(i => i.risk === "High" || i.risk === "Escalate");
+
+  const sum = (arr) => arr.reduce((t, i) => t + i.amount, 0);
+  const totalPaid = sum(paid);
+  const totalOutstanding = sum(pending) + sum(overdue);
+  const totalARBalance = totalPaid + totalOutstanding;
+  const avgDaysLate = overdue.length ? overdue.reduce((t, i) => t + i.daysLate, 0) / overdue.length : 0;
+
+  document.getElementById("reportDate").textContent = `Demo data (offline mode) · last refreshed ${new Date().toLocaleTimeString()}`;
+  document.getElementById("badgeText").textContent = `${invoices.length} invoices · ${new Set(invoices.map(i => i.customer)).size} accounts`;
+
+  const kpis = [
+    { label: "Total Outstanding", value: fmt(totalOutstanding), sub: "Pending + Overdue", cls: "accent" },
+    { label: "Total Paid", value: fmt(totalPaid), sub: `${paid.length} invoices`, cls: "good" },
+    { label: "Overdue Invoices", value: overdue.length, sub: `of ${invoices.length} total`, cls: "warn" },
+    { label: "High Risk Accounts", value: highRisk.length, sub: "High + Escalate tier", cls: "danger" },
+    { label: "Average Days Late", value: avgDaysLate.toFixed(1), sub: "across overdue invoices", cls: "warn" },
+    { label: "Total AR Balance", value: fmt(totalARBalance), sub: "all invoices, all statuses", cls: "accent" },
+  ];
+
+  document.getElementById("kpiGrid").innerHTML = kpis.map(k => `
+    <div class="kpi ${k.cls}">
+      <div class="label">${k.label}</div>
+      <div class="value">${k.value}</div>
+      <div class="sub">${k.sub}</div>
+    </div>
+  `).join("");
+
+  const riskTiers = ["Low", "Medium", "High", "Escalate"];
+  const riskTotals = riskTiers.map(tier => sum(overdue.filter(i => i.risk === tier)));
+
+  new Chart(document.getElementById("riskChart"), {
+    type: "bar",
+    data: {
+      labels: riskTiers,
+      datasets: [{
+        label: "Outstanding $",
+        data: riskTotals,
+        backgroundColor: ["#34d399", "#fbbf24", "#fb923c", "#f87171"],
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: "#92a0bd" }, grid: { display: false } },
+        y: { ticks: { color: "#92a0bd", callback: (v) => "$" + v.toLocaleString() }, grid: { color: "#22304a" } },
+      },
+    },
+  });
+
+  new Chart(document.getElementById("statusChart"), {
+    type: "doughnut",
+    data: {
+      labels: ["Paid", "Pending", "Overdue"],
+      datasets: [{
+        data: [paid.length, pending.length, overdue.length],
+        backgroundColor: ["#34d399", "#5b8cff", "#f87171"],
+        borderWidth: 0,
+      }],
+    },
+    options: {
+      plugins: { legend: { position: "bottom", labels: { color: "#e7ecf7" } } },
+    },
+  });
+
+  document.querySelector("#highRiskTable tbody").innerHTML = highRisk
+    .sort((a, b) => b.amount - a.amount)
+    .map(i => `
+      <tr>
+        <td>${i.id}</td>
+        <td>${i.customer}</td>
+        <td>${fmt(i.amount)}</td>
+        <td>${i.daysLate}</td>
+        <td><span class="tag ${i.risk}">${i.risk}</span></td>
+        <td>${i.stage}</td>
+      </tr>
+    `).join("");
+}
+
+loadDashboard();
+
+</script>
+</body>
+</html>

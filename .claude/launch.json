@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["http-server"],
+      "env": {
+        "PORT": "$PORT"
+      },
+      "autoPort": true
+    }
+  ]
+}
