@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>AR Copilot — Finance Dashboard</title>
+<title>AR Finance Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <style>
   :root {
@@ -96,8 +96,8 @@
 
 <header>
   <div>
-    <h1>AR Copilot — Finance Dashboard</h1>
-    <p id="reportDate">Loading live data from Google Sheets...</p>
+    <h1>AR Finance Dashboard</h1>
+    <!-- <p id="reportDate">Loading live data from Google Sheets...</p> -->
   </div>
   <span class="badge" id="badgeText">Loading...</span>
 </header>
@@ -125,17 +125,38 @@
   </table>
 </div>
 
-<footer>AR Copilot — AI Accounts Receivable Automation · live data from Google Sheets</footer>
+<footer>AI Accounts Receivable Automation @Ritesh</footer>
 
 <script>
-function renderDashboard() {
-  const invoices = [
-    { id: "INV-1001", customer: "Acme Corp", amount: 4200.00, status: "Paid", daysLate: 0, risk: "-", stage: "No" },
-    { id: "INV-1002", customer: "Globex Industries", amount: 8750.50, status: "Paid", daysLate: 0, risk: "-", stage: "No" },
-    { id: "INV-1003", customer: "Initech LLC", amount: 15000.00, status: "Overdue", daysLate: 12, risk: "Medium", stage: "1st Reminder" },
-    { id: "INV-1004", customer: "Umbrella Group", amount: 31000.00, status: "Overdue", daysLate: 21, risk: "High", stage: "2nd Reminder" },
-    { id: "INV-1005", customer: "Stark Industries", amount: 41200.00, status: "Overdue", daysLate: 34, risk: "Escalate", stage: "Final Notice" },
-  ];
+async function renderDashboard() {
+  const apiUrl = "https://script.google.com/macros/s/AKfycbx0p4DgAmrhw19MhGArhS9sl67-SIUijYDlVQAU-XsM-Rbq2HFhuaiTekgW99fIpkV-/exec";
+
+  try {
+    const response = await fetch(apiUrl);
+    const data = await response.json();
+    let invoices = data.invoices || [];
+
+    // Clean and normalize invoice data
+    invoices = invoices.filter(i => i["Invoice ID"]).map(row => ({
+      id: row["Invoice ID"],
+      customer: row["Customer"],
+      amount: parseFloat(row["Amount"]) || 0,
+      status: row["Status"],
+      daysLate: parseInt(row["Days Late"]) || 0,
+      risk: row["Risk Score"] || "-",
+      stage: row["Reminder Sent"] || "-"
+    }));
+
+    if (invoices.length === 0) throw new Error("No invoices found");
+
+    renderWithData(invoices);
+  } catch (err) {
+    document.getElementById("badgeText").textContent = `Error: ${err.message}`;
+    console.error("Error fetching data:", err);
+  }
+}
+
+function renderWithData(invoices) {
 
   const fmt = (n) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const paid = invoices.filter(i => i.status === "Paid");
@@ -149,7 +170,7 @@ function renderDashboard() {
   const totalARBalance = totalPaid + totalOutstanding;
   const avgDaysLate = overdue.length ? overdue.reduce((t, i) => t + i.daysLate, 0) / overdue.length : 0;
 
-  document.getElementById("reportDate").textContent = `Generated from n8n workflow · last refreshed ${new Date().toLocaleTimeString()}`;
+  // document.getElementById("reportDate").textContent = `Generated from n8n workflow · last refreshed ${new Date().toLocaleTimeString()}`;
   document.getElementById("badgeText").textContent = `${invoices.length} invoices · ${new Set(invoices.map(i => i.customer)).size} accounts`;
 
   const kpis = [
