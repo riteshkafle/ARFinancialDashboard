@@ -97,7 +97,6 @@
 <header>
   <div>
     <h1>AR Finance Dashboard</h1>
-    <!-- <p id="reportDate">Loading live data from Google Sheets...</p> -->
   </div>
   <span class="badge" id="badgeText">Loading...</span>
 </header>
@@ -128,7 +127,7 @@
 <footer>AI Accounts Receivable Automation @Ritesh</footer>
 
 <script>
-async function renderDashboard() {
+async function loadDashboard() {
   const apiUrl = "https://script.google.com/macros/s/AKfycbx0p4DgAmrhw19MhGArhS9sl67-SIUijYDlVQAU-XsM-Rbq2HFhuaiTekgW99fIpkV-/exec";
 
   try {
@@ -136,7 +135,6 @@ async function renderDashboard() {
     const data = await response.json();
     let invoices = data.invoices || [];
 
-    // Clean and normalize invoice data
     invoices = invoices.filter(i => i["Invoice ID"]).map(row => ({
       id: row["Invoice ID"],
       customer: row["Customer"],
@@ -148,16 +146,14 @@ async function renderDashboard() {
     }));
 
     if (invoices.length === 0) throw new Error("No invoices found");
-
-    renderWithData(invoices);
+    renderDashboard(invoices);
   } catch (err) {
     document.getElementById("badgeText").textContent = `Error: ${err.message}`;
     console.error("Error fetching data:", err);
   }
 }
 
-function renderWithData(invoices) {
-
+function renderDashboard(invoices) {
   const fmt = (n) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const paid = invoices.filter(i => i.status === "Paid");
   const pending = invoices.filter(i => i.status === "Pending");
@@ -170,7 +166,6 @@ function renderWithData(invoices) {
   const totalARBalance = totalPaid + totalOutstanding;
   const avgDaysLate = overdue.length ? overdue.reduce((t, i) => t + i.daysLate, 0) / overdue.length : 0;
 
-  // document.getElementById("reportDate").textContent = `Generated from n8n workflow · last refreshed ${new Date().toLocaleTimeString()}`;
   document.getElementById("badgeText").textContent = `${invoices.length} invoices · ${new Set(invoices.map(i => i.customer)).size} accounts`;
 
   const kpis = [
@@ -242,8 +237,7 @@ function renderWithData(invoices) {
     `).join("");
 }
 
-renderDashboard();
-
+loadDashboard();
 </script>
 </body>
 </html>
