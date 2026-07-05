@@ -185,8 +185,9 @@ function renderDashboard(invoices) {
     </div>
   `).join("");
 
+  const unpaid = invoices.filter(i => i.status !== "Paid");
   const riskTiers = ["Low", "Medium", "High", "Escalate"];
-  const riskTotals = riskTiers.map(tier => sum(overdue.filter(i => i.risk === tier)));
+  const riskTotals = riskTiers.map(tier => sum(unpaid.filter(i => i.risk === tier)));
 
   new Chart(document.getElementById("riskChart"), {
     type: "bar",
