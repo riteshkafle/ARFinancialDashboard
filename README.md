@@ -10,7 +10,7 @@ accounts, and rolls everything into a live dashboard.
 ## Demo
 
 - **Video walkthrough:** _[add your Loom link here]_
-- **Live dashboard preview:** open [`dashboard/index.html`](file:///Users/rkafle/Desktop/app_development/Accountn8nagent/dashboard/index.html) directly in a browser — no server required
+- **Live dashboard preview:** open [`[AR Finance Dashboard](file:///Users/rkafle/Desktop/app_development/Accountn8nagent/dashboard/index.html)`] directly in a browser — no server required
 
 ## Purpose
 AR Copilot automates entire finance loop. 
