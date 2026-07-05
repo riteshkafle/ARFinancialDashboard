@@ -32,7 +32,6 @@ flowchart LR
     A[Google Sheets] --> B[n8n]
     B --> C[AI - OpenAI]
     C --> D[Gmail]
-    D --> E[Slack]
     E --> F[Dashboard]
 ```
 
