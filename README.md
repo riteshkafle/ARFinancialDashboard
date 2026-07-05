@@ -1,4 +1,4 @@
-# AR Copilot — AI Accounts Receivable Automation
+# AR Copilot AI Accounts Receivable Automation
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
