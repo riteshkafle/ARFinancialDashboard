@@ -32,7 +32,7 @@ flowchart LR
     A[Google Sheets] --> B[n8n]
     B --> C[AI - OpenAI]
     C --> D[Gmail]
-    E --> F[Dashboard]
+    D --> E[Dashboard]
 ```
 
 Full diagram with every node and the reasoning behind the design is in
