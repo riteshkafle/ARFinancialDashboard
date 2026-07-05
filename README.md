@@ -10,7 +10,7 @@ accounts, and rolls everything into a live dashboard.
 ## Demo
 
 - **Video walkthrough:** _[add your Loom link here]_
-- **[Live dashboard preview]:** open [`[AR Finance Dashboard]
+- **[Live dashboard preview]:** open [AR Finance Dashboard]
 
 /Users/rkafle/Desktop/app_development/Accountn8nagent/dashboard/index.html
 
@@ -39,8 +39,6 @@ flowchart LR
     D --> E[Dashboard]
 ```
 
-Full diagram with every node and the reasoning behind the design is in
-[`docs/architecture.md`](docs/architecture.md).
 
 ## Tech stack
 
