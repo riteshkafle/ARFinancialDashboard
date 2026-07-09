@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AR Finance Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0f19;
+    --panel: #131a2a;
+    --panel-border: #22304a;
+    --text: #e7ecf7;
+    --muted: #92a0bd;
+    --accent: #5b8cff;
+    --low: #34d399;
+    --medium: #fbbf24;
+    --high: #fb923c;
+    --escalate: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(circle at top left, #16203a, var(--bg) 60%);
+    color: var(--text);
+    padding: 32px;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  header h1 { margin: 0; font-size: 24px; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+  .badge {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+  .kpi {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 18px 20px;
+  }
+  .kpi .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .kpi .value { font-size: 26px; font-weight: 700; margin-top: 6px; }
+  .kpi .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .kpi.accent .value { color: var(--accent); }
+  .kpi.warn .value { color: var(--high); }
+  .kpi.danger .value { color: var(--escalate); }
+  .kpi.good .value { color: var(--low); }
+
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+  @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 18px 20px;
+  }
+  .panel h2 { margin: 0 0 12px; font-size: 15px; color: var(--muted); font-weight: 600; }
+  .panel canvas { max-height: 280px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--panel-border); }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+  .tag { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .tag.Low { background: rgba(52,211,153,.15); color: var(--low); }
+  .tag.Medium { background: rgba(251,191,36,.15); color: var(--medium); }
+  .tag.High { background: rgba(251,146,60,.15); color: var(--high); }
+  .tag.Escalate { background: rgba(248,113,113,.15); color: var(--escalate); }
+
+  footer { color: var(--muted); font-size: 12px; margin-top: 24px; text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>AR Finance Dashboard</h1>
+  </div>
+  <span class="badge" id="badgeText">Loading...</span>
+</header>
+
+<div class="kpi-grid" id="kpiGrid"></div>
+
+<div class="charts-grid">
+  <div class="panel">
+    <h2>Outstanding Balance by Risk Tier</h2>
+    <canvas id="riskChart"></canvas>
+  </div>
+  <div class="panel">
+    <h2>Invoice Status Mix</h2>
+    <canvas id="statusChart"></canvas>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>High-Risk Accounts (High / Escalate)</h2>
+  <table id="highRiskTable">
+    <thead>
+      <tr><th>Invoice</th><th>Customer</th><th>Amount</th><th>Days Late</th><th>Risk</th><th>Reminder Stage</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<footer>AI Accounts Receivable Automation @Ritesh</footer>
+
+<script>
+async function loadDashboard() {
+  const apiUrl = "https://script.google.com/macros/s/AKfycbx0p4DgAmrhw19MhGArhS9sl67-SIUijYDlVQAU-XsM-Rbq2HFhuaiTekgW99fIpkV-/exec";
+
+  try {
+    const response = await fetch(apiUrl);
+    const data = await response.json();
+    let invoices = data.invoices || [];
+
+    invoices = invoices.filter(i => i["Invoice ID"]).map(row => ({
+      id: row["Invoice ID"],
+      customer: row["Customer"],
+      amount: parseFloat(row["Amount"]) || 0,
+      status: row["Status"],
+      daysLate: parseInt(row["Days Late"]) || 0,
+      risk: row["Risk Score"] || "-",
+      stage: row["Reminder Sent"] || "-"
+    }));
+
+    if (invoices.length === 0) throw new Error("No invoices found");
+    renderDashboard(invoices);
+  } catch (err) {
+    document.getElementById("badgeText").textContent = `Error: ${err.message}`;
+    console.error("Error fetching data:", err);
+  }
+}
+
+function renderDashboard(invoices) {
+  const fmt = (n) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const paid = invoices.filter(i => i.status === "Paid");
+  const pending = invoices.filter(i => i.status === "Pending");
+  const overdue = invoices.filter(i => i.status === "Overdue");
+  const highRisk = overdue.filter(i => i.risk === "High" || i.risk === "Escalate");
+
+  const sum = (arr) => arr.reduce((t, i) => t + i.amount, 0);
+  const totalPaid = sum(paid);
+  const totalOutstanding = sum(pending) + sum(overdue);
+  const totalARBalance = totalPaid + totalOutstanding;
+  const avgDaysLate = overdue.length ? overdue.reduce((t, i) => t + i.daysLate, 0) / overdue.length : 0;
+
+  document.getElementById("badgeText").textContent = `${invoices.length} invoices · ${new Set(invoices.map(i => i.customer)).size} accounts`;
+
+  const kpis = [
+    { label: "Total Outstanding", value: fmt(totalOutstanding), sub: "Pending + Overdue", cls: "accent" },
+    { label: "Total Paid", value: fmt(totalPaid), sub: `${paid.length} invoices`, cls: "good" },
+    { label: "Overdue Invoices", value: overdue.length, sub: `of ${invoices.length} total`, cls: "warn" },
+    { label: "High Risk Accounts", value: highRisk.length, sub: "High + Escalate tier", cls: "danger" },
+    { label: "Average Days Late", value: avgDaysLate.toFixed(1), sub: "across overdue invoices", cls: "warn" },
+    { label: "Total AR Balance", value: fmt(totalARBalance), sub: "all invoices, all statuses", cls: "accent" },
+  ];
+
+  document.getElementById("kpiGrid").innerHTML = kpis.map(k => `
+    <div class="kpi ${k.cls}">
+      <div class="label">${k.label}</div>
+      <div class="value">${k.value}</div>
+      <div class="sub">${k.sub}</div>
+    </div>
+  `).join("");
+
+  const unpaid = invoices.filter(i => i.status !== "Paid");
+  const riskTiers = ["Low", "Medium", "High", "Escalate"];
+  const riskTotals = riskTiers.map(tier => sum(unpaid.filter(i => i.risk === tier)));
+
+  new Chart(document.getElementById("riskChart"), {
+    type: "bar",
+    data: {
+      labels: riskTiers,
+      datasets: [{
+        label: "Outstanding $",
+        data: riskTotals,
+        backgroundColor: ["#34d399", "#fbbf24", "#fb923c", "#f87171"],
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: "#92a0bd" }, grid: { display: false } },
+        y: { ticks: { color: "#92a0bd", callback: (v) => "$" + v.toLocaleString() }, grid: { color: "#22304a" } },
+      },
+    },
+  });
+
+  new Chart(document.getElementById("statusChart"), {
+    type: "doughnut",
+    data: {
+      labels: ["Paid", "Pending", "Overdue"],
+      datasets: [{
+        data: [paid.length, pending.length, overdue.length],
+        backgroundColor: ["#34d399", "#5b8cff", "#f87171"],
+        borderWidth: 0,
+      }],
+    },
+    options: {
+      plugins: { legend: { position: "bottom", labels: { color: "#e7ecf7" } } },
+    },
+  });
+
+  document.querySelector("#highRiskTable tbody").innerHTML = highRisk
+    .sort((a, b) => b.amount - a.amount)
+    .map(i => `
+      <tr>
+        <td>${i.id}</td>
+        <td>${i.customer}</td>
+        <td>${fmt(i.amount)}</td>
+        <td>${i.daysLate}</td>
+        <td><span class="tag ${i.risk}">${i.risk}</span></td>
+        <td>${i.stage}</td>
+      </tr>
+    `).join("");
+}
+
+loadDashboard();
+</script>
+</body>
+</html>
